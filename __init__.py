@@ -29,11 +29,11 @@ bl_info = {
     "author": "Jose, Maciej",
     "version": (1, 1),
     "blender": (3, 6, 0),
-    "location": "Location",
+    "location": "Tools side panel in 3D View",
     "description": "Retarget armeture using Empties",
     "warning": "",
     "wiki_url": "",
-    "category": "3D View -> Right sidebar -> Tools panel",
+    "category": "Animation",
     }
 
 def is_root(bone, dimensions):
