@@ -27,8 +27,8 @@ from mathutils import Vector
 bl_info = {
     "name": "Retarget using Empties",
     "author": "Jose, Maciej",
-    "version": (1, 0),
-    "blender": (2, 80, 0),
+    "version": (1, 1),
+    "blender": (3, 6, 0),
     "location": "Location",
     "description": "Retarget armeture using Empties",
     "warning": "",
@@ -93,8 +93,8 @@ def sort_fingers(hand_bone, forward_vec):
         fingers.append(finger_bones_li)
     sorted_fingers = [finger for _, finger in sorted(zip(avg_finger_pos, fingers), reverse= True)]
     return sorted_fingers
-    
-    
+
+
 def detect_structure(armature):
     arma_structure = {'Spine': [], 'R_Arm': [], 'L_Arm': [], 'L_Leg': [], 'R_Leg': [], 'Neck': [], 'Head': []}
     root_bone = find_real_root_bone(armature)
@@ -146,7 +146,7 @@ def detect_structure(armature):
                         if len(arm_b.children) != 5:
                             arma_structure['L_Arm'].append(arm_b)
                         else:   # we got hand bone. Add fingers
-                            arma_structure['L_Arm'].append(arm_b) 
+                            arma_structure['L_Arm'].append(arm_b)
                             sorted_fingers = sort_fingers(arm_b, forward_vec)
                             for i, finger in enumerate(sorted_fingers): #finger has 3 bones
                                 arma_structure['L_Finger'+str(i+1)] = finger
@@ -168,7 +168,7 @@ def detect_structure(armature):
 
     scan_child_rec(root_bone, 'Spine')
     return arma_structure
-        
+
 
 class RET_OT_BuildBonesHierarchy(bpy.types.Operator):
     bl_idname = "object.build_bones_hierarchy"
@@ -213,16 +213,20 @@ class RET_OT_CleanConstraintsHierarchy(bpy.types.Operator):
         return context.active_object and context.active_object.type == 'ARMATURE'
 
     def execute(self, context):
+        # get all copy raotation locatoin constraints that target empties and remove them
         for p_bone in context.active_object.pose.bones:
-            for c in reversed(p_bone.constraints):
-                p_bone.constraints.remove(c)
+            for constr in reversed(p_bone.constraints):
+                if constr.type in ['COPY_LOCATION', 'COPY_ROTATION']:
+                    if constr.target and constr.target.type == 'EMPTY':
+                        p_bone.constraints.remove(constr)
+
         self.report({'INFO'}, f'Cleanup sucesfull')
-        
+
         return {"FINISHED"}
 
 
 class RET_OT_RetargetByEmpties(bpy.types.Operator):
-    bl_idname = "object.retarget_using_empties" 
+    bl_idname = "object.retarget_using_empties"
     bl_label = "Retarget using empties"
     bl_description = "retarget using empties"
     bl_options = {"REGISTER","UNDO"}
@@ -235,13 +239,22 @@ class RET_OT_RetargetByEmpties(bpy.types.Operator):
         else:
             target_empty = bpy.data.objects[target_empty_name]
 
-        old_contr = {constr.type: i for i, constr in enumerate(target_bone.constraints)}
+        # add new constraiints - skip if already exists
         if copy_rot:
-            copy_rot = target_bone.constraints[old_contr['COPY_ROTATION']] if 'COPY_ROTATION' in target_bone.constraints.keys() else target_bone.constraints.new('COPY_ROTATION')
-            copy_rot.target = target_empty
+            # check if coy rot constraint already exists that points to target_empty, if not   create new
+            for constr in target_bone.constraints:
+                if constr.type == 'COPY_ROTATION' and constr.target == target_empty:
+                    return
+            constr = target_bone.constraints.new('COPY_ROTATION')
+            constr.name = 'RetargetRot'
         if copy_loc:
-            copy_loc = target_bone.constraints[old_contr['COPY_LOCATION'] ] if 'COPY_LOCATION' in target_bone.constraints.keys() else target_bone.constraints.new('COPY_LOCATION')
-            copy_loc.target = target_empty
+            for constr in target_bone.constraints:
+                if constr.type == 'COPY_LOCATION' and constr.target == target_empty:
+                    return
+            constr = target_bone.constraints.new('COPY_LOCATION')
+            constr.name = 'RetargetLoc'
+
+        constr.target = target_empty
 
     def execute(self, context):
         ret_props = context.scene.retarget_settings
@@ -265,27 +278,32 @@ class RET_OT_RetargetByEmpties(bpy.types.Operator):
             for bone_item in bones_chain.src_bones:
                 edit_bone = source_arma.data.bones[bone_item.name]
                 print(f'Adding empty_box for bone {edit_bone.name}')
-                if edit_bone.name not in bpy.data.objects.keys():
+                empty_box = bpy.data.objects.get(edit_bone.name)
+                if not empty_box:
                     empty_box = bpy.data.objects.new(edit_bone.name, None)
-                    empty_box.empty_display_size = sqrt(edit_bone.length)/600
+                    empty_box.empty_display_size = sqrt(edit_bone.length)/40
                     empty_box.empty_display_type = 'CUBE'
                     bone_follow_coll.objects.link(empty_box)
-                else:
-                    empty_box = bpy.data.objects[edit_bone.name]
 
-                old_contr = {constr.type:i for i,constr in enumerate(empty_box.constraints)}
-                
-                copy_rot = empty_box.constraints[old_contr['COPY_ROTATION']] if 'COPY_ROTATION' in old_contr else empty_box.constraints.new('COPY_ROTATION')
-                copy_rot.target = source_arma
-                copy_rot.subtarget = edit_bone.name
+                old_rot_contr = [constr for constr in empty_box.constraints if constr.type == 'COPY_ROTATION' and constr.target == source_arma and constr.subtarget == edit_bone.name]
+                if not old_rot_contr:
+                    copy_rot = empty_box.constraints.new('COPY_ROTATION')
+                    copy_rot.target = source_arma
+                    copy_rot.subtarget = edit_bone.name
 
-                copy_loc = empty_box.constraints[old_contr['COPY_LOCATION']] if 'COPY_LOCATION' in old_contr else empty_box.constraints.new('COPY_LOCATION')
-                copy_loc.target = source_arma
-                copy_loc.subtarget = edit_bone.name
+                old_loc_contr = [constr for constr in empty_box.constraints if constr.type == 'COPY_LOCATION' and constr.target == source_arma and constr.subtarget == edit_bone.name]
+                if not old_loc_contr:
+                    copy_loc = empty_box.constraints.new('COPY_LOCATION')
+                    copy_loc.target = source_arma
+                    copy_loc.subtarget = edit_bone.name
 
-                empty_child = bpy.data.objects[edit_bone.name+'T'] if edit_bone.name+'T' in bpy.data.objects.keys() else bpy.data.objects.new(edit_bone.name+'T', None)
-                empty_child.empty_display_size = sqrt(edit_bone.length)/600
-                empty_child.empty_display_type = 'SPHERE'
+                object_name = edit_bone.name + 'T'
+                empty_child = bpy.data.objects.get(object_name)
+                if not empty_child:
+                    empty_child = bpy.data.objects.new(object_name, None)
+                    empty_child.empty_display_size = sqrt(edit_bone.length)/40
+                    empty_child.empty_display_type = 'SPHERE'
+
                 if empty_child.name not in bone_target_coll.objects.keys():
                     bone_target_coll.objects.link(empty_child)
                 empty_child.parent = empty_box
@@ -305,7 +323,7 @@ class RET_OT_RetargetByEmpties(bpy.types.Operator):
             if len(src_bones) != len(target_bones):
                 self.report({'WARNING'}, f'Hierarchy length mismatch for {bones_chain.name} chain')
             for src_bone, target_bone in zip(src_bones, target_bones):
-                # s_bone = source_arma.data.bones[src_bone.name] 
+                # s_bone = source_arma.data.bones[src_bone.name]
                 # t_bone = target_arma.data.bones[target_bone.name]
                 #* set constraints on target armature bones to copy loc, rot - from target empties
                 self.setup_constraints(context, source_arma.pose.bones[src_bone.name], target_arma.pose.bones[target_bone.name], target_bone.copy_loc, target_bone.copy_rot)  # first for chain roots
@@ -337,7 +355,7 @@ class ARMATURE_UL_target_chains_list(bpy.types.UIList):
                 row = layout.row(align=True)
                 if arma_obj:
                     # row.prop_search(bone, "name", arma_obj.data, "bones", text='')
-                    row.label(text=bone.name)
+                    row.prop(bone,'name', emboss=False, text='')
                     ic = 'CHECKBOX_HLT' if bone.enabled else 'CHECKBOX_DEHLT'
                     row.prop(bone, "enabled", emboss=False, icon=ic, icon_only=True)
                 else:
@@ -362,7 +380,7 @@ class ARMATURE_UL_src_chains_list(bpy.types.UIList):
                 row = layout.row(align=True)
                 if arma_obj:
                     # row.prop_search(bone, "name", arma_obj.data, "bones", text='')
-                    row.label(text=bone.name)
+                    row.prop(bone, 'name', emboss=False, text='')
                     ic = 'CHECKBOX_HLT' if bone.enabled else 'CHECKBOX_DEHLT'
                     row.prop(bone, "enabled", emboss=False, icon=ic, icon_only=True)
                 else:
@@ -376,7 +394,7 @@ class ARMATURE_UL_src_chains_list(bpy.types.UIList):
 
 class ARMATURE_PT_BonesHierarchy(bpy.types.Panel):
     bl_idname = 'ARMATURE_PT_BonesHierarchy'
-    bl_label = 'ArmatureHierarchy'
+    bl_label = 'Retargeting Hierarchy'
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'Tools'
@@ -464,7 +482,7 @@ class RET_OT_AddChainBone(bpy.types.Operator):
             new_bone.name = self.name
         else:
             self.report({'WARNING'}, f'No bone name')
-            
+
         return {"FINISHED"}
 
 
