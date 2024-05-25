@@ -309,10 +309,6 @@ class RET_OT_RetargetByEmpties(bpy.types.Operator):
                 empty_child.parent = empty_box
 
 
-        # dg = context.evaluated_depsgraph_get()
-        # dg.update()
-        src_dim = source_arma.dimensions.length
-        target_dim = target_arma.dimensions.length
         for bones_chain in ret_props.arma_hierarchy:
             if len(bones_chain.src_bones) == 0 or len(bones_chain.target_bones) == 0:
                 self.report({'WARNING'}, f'Empty chain {bones_chain.name}.Skipping')
@@ -332,36 +328,24 @@ class RET_OT_RetargetByEmpties(bpy.types.Operator):
 
 
 class ARMATURE_UL_target_chains_list(bpy.types.UIList):
-    # The draw_item function is called for each item of the collection that is visible in the list.
-    #   data is the RNA object containing the collection,
-    #   item is the current drawn item of the collection,
-    #   icon is the "computed" icon for the item (as an integer, because some objects like materials or textures
-    #   have custom icons ID, which are not available as enum items).
-    #   active_data is the RNA object containing the active property for the collection (i.e. integer pointing to the
-    #   active item of the collection).
-    #   active_propname is the name of the active property (use 'getattr(active_data, active_propname)').
-    #   index is index of the current item in the collection.
-    #   flt_flag is the result of the filtering process for this item.
-    #   Note: as index and flt_flag are optional arguments, you do not have to use/declare them here if you don't
-    #         need them.
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         hierarchy_structure = data
-        bone = item
+        retarget_info = item
         ret_props = context.scene.retarget_settings
         arma_obj = bpy.data.objects.get(ret_props.target_armature)
         # draw_item must handle the three layout types... Usually 'DEFAULT' and 'COMPACT' can share the same code.
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            if bone:
+            if retarget_info:
                 row = layout.row(align=True)
                 if arma_obj:
                     # row.prop_search(bone, "name", arma_obj.data, "bones", text='')
-                    row.prop(bone,'name', emboss=False, text='')
-                    ic = 'CHECKBOX_HLT' if bone.enabled else 'CHECKBOX_DEHLT'
-                    row.prop(bone, "enabled", emboss=False, icon=ic, icon_only=True)
+                    row.prop(retarget_info,'name', emboss=False, text='')
+                    ic = 'CHECKBOX_HLT' if retarget_info.enabled else 'CHECKBOX_DEHLT'
+                    row.prop(retarget_info, "enabled", emboss=False, icon=ic, icon_only=True)
                 else:
-                    row.prop(bone,'name', text='')
-                row.prop(bone, "copy_rot", emboss=True, icon='CON_ROTLIKE', icon_only=True)
-                row.prop(bone, "copy_loc", emboss=True, icon='CON_LOCLIKE', icon_only=True)
+                    row.prop(retarget_info,'name', text='')
+                row.prop(retarget_info, "copy_rot", emboss=True, icon='CON_ROTLIKE', icon_only=True)
+                row.prop(retarget_info, "copy_loc", emboss=True, icon='CON_LOCLIKE', icon_only=True)
             else:
                 layout.label(text="", translate=False)
         elif self.layout_type in {'GRID'}:
@@ -372,19 +356,19 @@ class ARMATURE_UL_target_chains_list(bpy.types.UIList):
 class ARMATURE_UL_src_chains_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         hierarchy_structure = data
-        bone = item
+        ret_info = item
         ret_props = context.scene.retarget_settings
         arma_obj = bpy.data.objects.get(ret_props.src_armature)
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            if bone:
+            if ret_info:
                 row = layout.row(align=True)
                 if arma_obj:
                     # row.prop_search(bone, "name", arma_obj.data, "bones", text='')
-                    row.prop(bone, 'name', emboss=False, text='')
-                    ic = 'CHECKBOX_HLT' if bone.enabled else 'CHECKBOX_DEHLT'
-                    row.prop(bone, "enabled", emboss=False, icon=ic, icon_only=True)
+                    row.prop(ret_info, 'name', emboss=False, text='')
+                    ic = 'CHECKBOX_HLT' if ret_info.enabled else 'CHECKBOX_DEHLT'
+                    row.prop(ret_info, "enabled", emboss=False, icon=ic, icon_only=True)
                 else:
-                    row.prop(bone, 'name', text='')
+                    row.prop(ret_info, 'name', text='')
             else:
                 layout.label(text="", translate=False)
         elif self.layout_type in {'GRID'}:
@@ -405,9 +389,6 @@ class ARMATURE_PT_BonesHierarchy(bpy.types.Panel):
         layout.prop_search(ret_props, 'src_armature', bpy.data, 'objects')
         layout.prop_search(ret_props, 'target_armature', bpy.data, 'objects')
 
-        # template_list now takes two new args.
-        # The first one is the identifier of the registered UIList to use (if you want only the default list,
-        # with no custom draw code, use "UI_UL_list").
         layout.operator('object.build_bones_hierarchy')
 
         row = layout.row()
@@ -481,7 +462,7 @@ class RET_OT_AddChainBone(bpy.types.Operator):
                 new_bone = hierarchy.target_bones.add()
             new_bone.name = self.name
         else:
-            self.report({'WARNING'}, f'No bone name')
+            self.report({'WARNING'}, 'Provide bone name')
 
         return {"FINISHED"}
 
@@ -521,9 +502,7 @@ class RET_OT_AddChain(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        ret_props = context.scene.retarget_settings
-        new_h = ret_props.arma_hierarchy.add()
-        h_name = 'Chain'
+        chain = context.scene.retarget_settings.arma_hierarchy.add()
         return {"FINISHED"}
 
 class RET_OT_RemoveChain(bpy.types.Operator):
