@@ -424,7 +424,6 @@ class ARMATURE_PT_BonesHierarchy(bpy.types.Panel):
 
 class ChainBones(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty()
-    constrain_rot: bpy.props.BoolProperty(name='Constrain Rotation', description='', default=True)
     enabled: bpy.props.BoolProperty(name='Enabled', description='', default=True)
     copy_rot: bpy.props.BoolProperty(name='Copy Rot', description='', default=True)
     copy_loc: bpy.props.BoolProperty(name='Copy Loc', description='', default=False)
