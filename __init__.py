@@ -22,6 +22,7 @@ from difflib import SequenceMatcher
 from math import sqrt
 from copy import copy
 from mathutils import Vector
+import json
 
 
 bl_info = {
@@ -343,7 +344,7 @@ class ARMATURE_UL_target_chains_list(bpy.types.UIList):
                     ic = 'CHECKBOX_HLT' if retarget_info.enabled else 'CHECKBOX_DEHLT'
                     row.prop(retarget_info, "enabled", emboss=False, icon=ic, icon_only=True)
                 else:
-                    row.prop(retarget_info,'name', text='')
+                    row.prop(retarget_info,'name', text='', emboss=False)
                 row.prop(retarget_info, "copy_rot", emboss=True, icon='CON_ROTLIKE', icon_only=True)
                 row.prop(retarget_info, "copy_loc", emboss=True, icon='CON_LOCLIKE', icon_only=True)
             else:
@@ -368,7 +369,7 @@ class ARMATURE_UL_src_chains_list(bpy.types.UIList):
                     ic = 'CHECKBOX_HLT' if ret_info.enabled else 'CHECKBOX_DEHLT'
                     row.prop(ret_info, "enabled", emboss=False, icon=ic, icon_only=True)
                 else:
-                    row.prop(ret_info, 'name', text='')
+                    row.prop(ret_info, 'name', text='', emboss=False)
             else:
                 layout.label(text="", translate=False)
         elif self.layout_type in {'GRID'}:
@@ -419,6 +420,127 @@ class ARMATURE_PT_BonesHierarchy(bpy.types.Panel):
 
         layout.operator('object.clean_constraints')
         layout.operator('object.retarget_using_empties')
+
+        # save and raad json opers
+        col = layout.column(align=True)
+        col.operator('object.write_chain')
+        col.operator('object.read_chain')
+
+
+# operator that will write src and target armature and their mathcing bones to json
+class RET_OT_WriteChain(bpy.types.Operator):
+    bl_idname = "object.write_chain"
+    bl_label = "Write To File"
+    bl_description = "Write Rig chain relations to file (json)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    directory: bpy.props.StringProperty(subtype="DIR_PATH")
+    filename: bpy.props.StringProperty(name="File Name", default="file.json")
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+
+    def execute(self, context):
+        full_path = bpy.path.abspath(self.directory + self.filename)
+        self.json_write(full_path)
+        self.report({'INFO'}, "File saved to: " + full_path)
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    @staticmethod
+    def json_write(filepath):
+        scene = bpy.context.scene
+        retarget_settings = scene.retarget_settings
+
+        data = {
+            'src_armature': retarget_settings.src_armature,
+            'target_armature': retarget_settings.target_armature,
+            'arma_hierarchy': []
+        }
+
+        for hierarchy in retarget_settings.arma_hierarchy:
+            hierarchy_data = {
+                'name': hierarchy.name,
+                'src_bones': [],
+                'target_bones': [],
+                'src_bone_idx': hierarchy.src_bone_idx,
+                'target_bone_idx': hierarchy.target_bone_idx
+            }
+
+            for src_bone in hierarchy.src_bones:
+                hierarchy_data['src_bones'].append({
+                    'name': src_bone.name,
+                    'enabled': src_bone.enabled,
+                    'copy_rot': src_bone.copy_rot,
+                    'copy_loc': src_bone.copy_loc
+                })
+
+            for target_bone in hierarchy.target_bones:
+                hierarchy_data['target_bones'].append({
+                    'name': target_bone.name,
+                    'enabled': target_bone.enabled,
+                    'copy_rot': target_bone.copy_rot,
+                    'copy_loc': target_bone.copy_loc
+                })
+
+            data['arma_hierarchy'].append(hierarchy_data)
+
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=4)
+
+
+# json read oper
+class RET_OT_ReadChain(bpy.types.Operator):
+    bl_idname = "object.read_chain"
+    bl_label = "Read retargeting info from file"
+    bl_description = "Read retargeting info from file (json)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+
+    def execute(self, context):
+        self.report({'INFO'}, "Selected file: " + self.filepath)
+        self.json_read(self.filepath)
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+    @staticmethod
+    def json_read(filepath):
+        scene = bpy.context.scene
+        retarget_settings = scene.retarget_settings
+
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+
+        retarget_settings.src_armature = data['src_armature']
+        retarget_settings.target_armature = data['target_armature']
+        retarget_settings.arma_hierarchy.clear()
+
+        for hierarchy_data in data['arma_hierarchy']:
+            hierarchy = retarget_settings.arma_hierarchy.add()
+            hierarchy.name = hierarchy_data['name']
+            hierarchy.src_bone_idx = hierarchy_data['src_bone_idx']
+            hierarchy.target_bone_idx = hierarchy_data['target_bone_idx']
+
+            for src_bone_data in hierarchy_data['src_bones']:
+                src_bone = hierarchy.src_bones.add()
+                src_bone.name = src_bone_data['name']
+                src_bone.enabled = src_bone_data['enabled']
+                src_bone.copy_rot = src_bone_data['copy_rot']
+                src_bone.copy_loc = src_bone_data['copy_loc']
+
+            for target_bone_data in hierarchy_data['target_bones']:
+                target_bone = hierarchy.target_bones.add()
+                target_bone.name = target_bone_data['name']
+                target_bone.enabled = target_bone_data['enabled']
+                target_bone.copy_rot = target_bone_data['copy_rot']
+                target_bone.copy_loc = target_bone_data['copy_loc']
+
 
 
 
@@ -526,6 +648,8 @@ classes = (
     RET_OT_RetargetByEmpties,
     RET_OT_BuildBonesHierarchy,
     RET_OT_CleanConstraintsHierarchy,
+    RET_OT_WriteChain,
+    RET_OT_ReadChain,
     ChainBones,
     ArmaHierarchyStructures,
     RetargetingSettings,
