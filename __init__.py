@@ -221,7 +221,7 @@ class RET_OT_CleanConstraintsHierarchy(bpy.types.Operator):
                     if constr.target and constr.target.type == 'EMPTY':
                         p_bone.constraints.remove(constr)
 
-        self.report({'INFO'}, f'Cleanup sucesfull')
+        self.report({'INFO'}, 'Cleanup sucesfull')
 
         return {"FINISHED"}
 
@@ -229,7 +229,7 @@ class RET_OT_CleanConstraintsHierarchy(bpy.types.Operator):
 class RET_OT_RetargetByEmpties(bpy.types.Operator):
     bl_idname = "object.retarget_using_empties"
     bl_label = "Retarget using empties"
-    bl_description = "retarget using empties"
+    bl_description = "Add copy rotation (and location) constraints to target rig, so that they will follow empties from source rig"
     bl_options = {"REGISTER","UNDO"}
 
     def setup_constraints(self, context, src_bone, target_bone, copy_loc, copy_rot):
@@ -248,6 +248,8 @@ class RET_OT_RetargetByEmpties(bpy.types.Operator):
                     return
             constr = target_bone.constraints.new('COPY_ROTATION')
             constr.name = 'RetargetRot'
+
+            constr.target = target_empty
         if copy_loc:
             for constr in target_bone.constraints:
                 if constr.type == 'COPY_LOCATION' and constr.target == target_empty:
@@ -255,7 +257,7 @@ class RET_OT_RetargetByEmpties(bpy.types.Operator):
             constr = target_bone.constraints.new('COPY_LOCATION')
             constr.name = 'RetargetLoc'
 
-        constr.target = target_empty
+            constr.target = target_empty
 
     def execute(self, context):
         ret_props = context.scene.retarget_settings
